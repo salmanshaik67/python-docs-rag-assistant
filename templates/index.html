@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Python Docs Assistant</title>
+  <style>
+    :root {
+      --bg: #f7f7f5; --card: #fff; --text: #1d1d1f; --muted: #6b6b70;
+      --border: #e2e2e0; --accent: #3572a5; --accent-text: #fff;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #141416; --card: #1e1e21; --text: #ececec; --muted: #9a9aa0;
+        --border: #2e2e33; --accent: #5b9bd5; --accent-text: #0d0d0f;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    main { max-width: 760px; margin: 0 auto; padding: 48px 16px; }
+    h1 { margin: 0 0 4px; font-size: 1.6rem; }
+    .sub { margin: 0 0 24px; color: var(--muted); }
+    form { display: flex; gap: 8px; }
+    input {
+      flex: 1; min-width: 0; padding: 12px 14px; font: inherit; color: inherit;
+      background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    }
+    button {
+      padding: 12px 18px; font: inherit; font-weight: 600; cursor: pointer;
+      background: var(--accent); color: var(--accent-text); border: 0; border-radius: 8px;
+    }
+    button:disabled { opacity: .6; cursor: wait; }
+    .examples { margin: 12px 0 0; display: flex; flex-wrap: wrap; gap: 6px; }
+    .examples button {
+      padding: 4px 10px; font-size: .85rem; font-weight: 400;
+      background: transparent; color: var(--muted); border: 1px solid var(--border);
+    }
+    .card {
+      margin-top: 24px; padding: 18px 20px; background: var(--card);
+      border: 1px solid var(--border); border-radius: 10px;
+    }
+    .card h2 { margin: 0 0 8px; font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+    .answer { white-space: pre-wrap; }
+    ol { margin: 0; padding-left: 20px; }
+    li { margin: 6px 0; }
+    a { color: var(--accent); }
+    .score { color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums; }
+    .error { color: #c0392b; }
+    [hidden] { display: none; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Python Docs Assistant</h1>
+  <p class="sub">Ask a question about Python. Answers are passages from the official docs, found with hybrid search: DistilBERT + FAISS for meaning, BM25 for keywords.</p>
+
+  <form id="ask">
+    <input id="q" type="text" maxlength="500" placeholder="e.g. How do I read a JSON file?" autocomplete="off" required>
+    <button id="go" type="submit">Ask</button>
+  </form>
+  <div class="examples">
+    <button type="button">How do list comprehensions work?</button>
+    <button type="button">What is a virtual environment?</button>
+    <button type="button">How do I handle exceptions?</button>
+  </div>
+
+  <section id="result" hidden>
+    <div class="card">
+      <h2>Best match</h2>
+      <div id="answer" class="answer"></div>
+    </div>
+    <div class="card">
+      <h2>Sources</h2>
+      <ol id="sources"></ol>
+    </div>
+  </section>
+  <p id="error" class="error" hidden></p>
+</main>
+
+<script>
+  const form = document.getElementById("ask");
+  const input = document.getElementById("q");
+  const go = document.getElementById("go");
+  const result = document.getElementById("result");
+  const errorEl = document.getElementById("error");
+
+  document.querySelectorAll(".examples button").forEach(b =>
+    b.addEventListener("click", () => { input.value = b.textContent; form.requestSubmit(); })
+  );
+
+  form.addEventListener("submit", async e => {
+    e.preventDefault();
+    go.disabled = true; go.textContent = "Searching…";
+    errorEl.hidden = true;
+    try {
+      const res = await fetch("/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: input.value }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Request failed");
+
+      document.getElementById("answer").textContent = data.answer;
+      const list = document.getElementById("sources");
+      list.replaceChildren(...data.sources.map(s => {
+        const li = document.createElement("li");
+        const a = document.createElement("a");
+        a.href = s.source; a.target = "_blank"; a.rel = "noopener"; a.textContent = s.title;
+        const score = document.createElement("span");
+        score.className = "score"; score.textContent = ` · cosine ${s.cosine.toFixed(3)} · BM25 ${s.bm25.toFixed(1)}`;
+        li.append(a, score);
+        return li;
+      }));
+      result.hidden = false;
+    } catch (err) {
+      result.hidden = true;
+      errorEl.textContent = err.message; errorEl.hidden = false;
+    } finally {
+      go.disabled = false; go.textContent = "Ask";
+    }
+  });
+</script>
+</body>
+</html>
